@@ -44,6 +44,14 @@ case "$1" in
         echo "🛠️ Listing available tools..."
         node quick-tests.js list-tools
         ;;
+    "billing")
+        echo "💳 Creating billing request..."
+        node quick-tests.js create-billing-request
+        ;;
+    "billing-list")
+        echo "📋 Listing billing requests..."
+        node quick-tests.js list-billing-requests
+        ;;
     "all")
         echo "🧪 Running all tests..."
         echo
@@ -58,6 +66,12 @@ case "$1" in
         echo
         echo "Test 4: List payments"
         node quick-tests.js list-payments
+        echo
+        echo "Test 5: Create billing request"
+        node quick-tests.js create-billing-request
+        echo
+        echo "Test 6: List billing requests"
+        node quick-tests.js list-billing-requests
         ;;
     "help"|""|*)
         echo
@@ -69,6 +83,8 @@ case "$1" in
         echo "  customers         - List customers"
         echo "  payments          - List payments"
         echo "  create            - Create test customer"
+        echo "  billing           - Create billing request (modern payment method)"
+        echo "  billing-list      - List billing requests"
         echo "  tools             - List available tools"
         echo "  all               - Run all basic tests"
         echo "  help              - Show this help"

@@ -228,6 +228,139 @@ const tools: Tool[] = [
         }
       }
     }
+  },
+
+  {
+    name: 'create_billing_request',
+    description: 'Create a billing request for collecting payments. This is the modern GoCardless approach for payment collection that combines mandate setup and payment creation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        amount_cents: {
+          type: 'number',
+          description: 'Payment amount in cents/pence (e.g., 2999 for £29.99)'
+        },
+        currency: {
+          type: 'string',
+          description: 'Payment currency (e.g., GBP, EUR, USD)',
+          enum: ['GBP', 'EUR', 'USD', 'SEK', 'DKK', 'AUD', 'NZD']
+        },
+        description: {
+          type: 'string',
+          description: 'Description of what the payment is for'
+        },
+        customer_email: {
+          type: 'string',
+          description: 'Customer email address',
+          format: 'email'
+        },
+        customer_given_name: {
+          type: 'string',
+          description: 'Customer first name'
+        },
+        customer_family_name: {
+          type: 'string',
+          description: 'Customer last name'
+        },
+        customer_company_name: {
+          type: 'string',
+          description: 'Customer company name (optional)'
+        },
+        payment_reference: {
+          type: 'string',
+          description: 'Reference for the payment (optional)'
+        }
+      },
+      required: ['amount_cents', 'currency', 'description', 'customer_email', 'customer_given_name', 'customer_family_name']
+    }
+  },
+
+  {
+    name: 'create_billing_request_flow',
+    description: 'Create a billing request flow to collect customer details and authorize payments. This generates a URL where customers can complete the entire payment setup process.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        billing_request_id: {
+          type: 'string',
+          description: 'The ID of the billing request to create a flow for'
+        },
+        redirect_uri: {
+          type: 'string',
+          description: 'URL to redirect customer to after completing the flow',
+          format: 'uri'
+        },
+        exit_uri: {
+          type: 'string',
+          description: 'URL to redirect customer to if they exit the flow (optional)',
+          format: 'uri'
+        },
+        session_token: {
+          type: 'string',
+          description: 'Unique session token to prevent CSRF attacks'
+        },
+        show_redirect_buttons: {
+          type: 'boolean',
+          description: 'Whether to show redirect buttons in the flow (default: true)',
+          default: true
+        }
+      },
+      required: ['billing_request_id', 'redirect_uri', 'session_token']
+    }
+  },
+
+  {
+    name: 'get_billing_request',
+    description: 'Get details of a specific billing request by its ID, including status and any associated payments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        billing_request_id: {
+          type: 'string',
+          description: 'The GoCardless billing request ID'
+        }
+      },
+      required: ['billing_request_id']
+    }
+  },
+
+  {
+    name: 'list_billing_requests',
+    description: 'List billing requests from GoCardless. Useful for monitoring payment collection status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum number of billing requests to return (default: 50)',
+          default: 50
+        },
+        status: {
+          type: 'string',
+          description: 'Filter by billing request status',
+          enum: ['pending', 'ready_to_fulfil', 'fulfilled', 'cancelled']
+        },
+        customer: {
+          type: 'string',
+          description: 'Filter by customer ID'
+        }
+      }
+    }
+  },
+
+  {
+    name: 'fulfil_billing_request',
+    description: 'Fulfil a billing request to create the actual payment. Call this after the customer has completed the billing request flow.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        billing_request_id: {
+          type: 'string',
+          description: 'The GoCardless billing request ID to fulfil'
+        }
+      },
+      required: ['billing_request_id']
+    }
   }
 ];
 
@@ -462,6 +595,187 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   `  Created: ${payment.created_at}\n` +
                   `  Description: ${payment.description || 'No description'}`
                 ).join('\n\n')
+            }
+          ]
+        };
+      }
+
+      case 'create_billing_request': {
+        if (!args) throw new Error('Arguments required for create_billing_request');
+        
+        const billingRequestData: any = {
+          billing_requests: {
+            purpose_code: 'utility',
+            payment_request: {
+              amount: args.amount_cents,
+              currency: args.currency,
+              description: args.description
+            },
+            mandate_request: {
+              currency: args.currency
+            }
+          }
+        };
+
+        // Add customer data if provided
+        if (args.customer_email) {
+          billingRequestData.billing_requests.mandate_request.payer = {
+            email: args.customer_email,
+            given_name: args.customer_given_name,
+            family_name: args.customer_family_name
+          };
+          
+          if (args.customer_company_name) {
+            billingRequestData.billing_requests.mandate_request.payer.company_name = args.customer_company_name;
+          }
+        }
+
+        // Add payment reference if provided
+        if (args.payment_reference) {
+          billingRequestData.billing_requests.payment_request.reference = args.payment_reference;
+        }
+
+        const data = await makeGoCardlessRequest('/billing_requests', {
+          method: 'POST',
+          body: JSON.stringify(billingRequestData)
+        });
+
+        const billingRequest = data.billing_requests;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully created billing request:\n\n` +
+                `ID: ${billingRequest.id}\n` +
+                `Amount: ${args.currency} ${(Number(args.amount_cents) / 100).toFixed(2)}\n` +
+                `Status: ${billingRequest.status}\n` +
+                `Description: ${args.description}\n` +
+                `Created: ${billingRequest.created_at}\n\n` +
+                `Next step: Create a billing request flow to collect customer authorization.`
+            }
+          ]
+        };
+      }
+
+      case 'create_billing_request_flow': {
+        if (!args) throw new Error('Arguments required for create_billing_request_flow');
+        
+        const flowData: any = {
+          billing_request_flows: {
+            redirect_uri: args.redirect_uri,
+            links: {
+              billing_request: args.billing_request_id
+            }
+          }
+        };
+
+        if (args.exit_uri) {
+          flowData.billing_request_flows.exit_uri = args.exit_uri;
+        }
+
+        if (args.show_redirect_buttons !== undefined) {
+          flowData.billing_request_flows.show_redirect_buttons = args.show_redirect_buttons;
+        }
+
+        const data = await makeGoCardlessRequest('/billing_request_flows', {
+          method: 'POST',
+          body: JSON.stringify(flowData)
+        });
+
+        const flow = data.billing_request_flows;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully created billing request flow:\n\n` +
+                `Flow ID: ${flow.id}\n` +
+                `Authorisation URL: ${flow.authorisation_url}\n` +
+                `Expires: ${flow.expires_at}\n\n` +
+                `Send your customer to the authorisation URL to complete payment setup. ` +
+                `After they complete the process, you can fulfil the billing request to create the payment.`
+            }
+          ]
+        };
+      }
+
+      case 'get_billing_request': {
+        if (!args?.billing_request_id) throw new Error('billing_request_id is required');
+        
+        const data = await makeGoCardlessRequest(`/billing_requests/${args.billing_request_id}`);
+        const billingRequest = data.billing_requests;
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Billing Request Details:\n\n` +
+                `ID: ${billingRequest.id}\n` +
+                `Status: ${billingRequest.status}\n` +
+                `Amount: ${billingRequest.payment_request?.currency || 'N/A'} ${billingRequest.payment_request?.amount ? (billingRequest.payment_request.amount / 100).toFixed(2) : 'N/A'}\n` +
+                `Description: ${billingRequest.payment_request?.description || 'No description'}\n` +
+                `Created: ${billingRequest.created_at}\n` +
+                `Purpose: ${billingRequest.purpose_code}\n` +
+                `Reference: ${billingRequest.payment_request?.reference || 'None'}\n` +
+                `Metadata: ${JSON.stringify(billingRequest.metadata, null, 2)}`
+            }
+          ]
+        };
+      }
+
+      case 'list_billing_requests': {
+        const queryParams = new URLSearchParams();
+        if (args?.limit) queryParams.set('limit', args.limit.toString());
+        if (args?.status && typeof args.status === 'string') queryParams.set('status', args.status);
+        if (args?.customer && typeof args.customer === 'string') queryParams.set('customer', args.customer);
+        
+        const data = await makeGoCardlessRequest(`/billing_requests?${queryParams}`);
+        
+        if (data.billing_requests.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'No billing requests found matching the criteria.'
+              }
+            ]
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Found ${data.billing_requests.length} billing request(s):\n\n` +
+                data.billing_requests.map((request: any) => 
+                  `• Amount: ${request.payment_request?.currency || 'N/A'} ${request.payment_request?.amount ? (request.payment_request.amount / 100).toFixed(2) : 'N/A'}\n` +
+                  `  ID: ${request.id}\n` +
+                  `  Status: ${request.status}\n` +
+                  `  Created: ${request.created_at}\n` +
+                  `  Description: ${request.payment_request?.description || 'No description'}`
+                ).join('\n\n')
+            }
+          ]
+        };
+      }
+
+      case 'fulfil_billing_request': {
+        if (!args?.billing_request_id) throw new Error('billing_request_id is required');
+        
+        const data = await makeGoCardlessRequest(`/billing_requests/${args.billing_request_id}/actions/fulfil`, {
+          method: 'POST',
+          body: JSON.stringify({})
+        });
+
+        const billingRequest = data.billing_requests;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully fulfilled billing request:\n\n` +
+                `ID: ${billingRequest.id}\n` +
+                `Status: ${billingRequest.status}\n` +
+                `Payment created: ${billingRequest.status === 'fulfilled' ? 'Yes' : 'No'}\n\n` +
+                `The billing request has been processed and payment collection has been initiated.`
             }
           ]
         };

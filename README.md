@@ -8,7 +8,8 @@ Model Context Protocol (MCP) is a standard that allows AI assistants to securely
 
 This server provides tools for:
 - Managing customers in GoCardless
-- Creating payment setup flows
+- Creating payment setup flows (legacy redirect flows)
+- **Creating billing requests (modern payment collection)**
 - Listing payments and their statuses
 - Managing bank account mandates
 
@@ -52,9 +53,16 @@ This server provides tools for:
 - `get_customer` - Get customer details by ID
 - `list_customer_bank_accounts` - List customer's bank accounts
 
-### Payment Setup
+### Payment Setup (Legacy)
 - `create_redirect_flow` - Create a secure flow for customers to add bank details
 - `list_payments` - List payments with optional filtering
+
+### Billing Requests (Modern Payment Collection)
+- `create_billing_request` - Create a billing request for payment collection
+- `create_billing_request_flow` - Create a flow for customer authorization
+- `get_billing_request` - Get billing request details and status
+- `list_billing_requests` - List billing requests with filtering
+- `fulfil_billing_request` - Process billing request to create payment
 
 ## Example Usage
 
@@ -63,8 +71,10 @@ Once connected to an AI assistant via MCP, you can:
 ```
 "Create a customer named John Doe with email john@example.com"
 "List all customers" 
-"Create a redirect flow for subscription setup"
+"Create a billing request for £29.99 monthly subscription"
+"Create a redirect flow for subscription setup" (legacy method)
 "Show me all failed payments"
+"List my billing requests and their statuses"
 ```
 
 The AI assistant will use the appropriate tools and handle the API calls automatically.

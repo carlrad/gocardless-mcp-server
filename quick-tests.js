@@ -61,6 +61,33 @@ const tests = {
     }
   },
   
+  // Billing request tests
+  'create-billing-request': {
+    description: 'Create a billing request for £29.99',
+    method: 'tools/call',
+    params: {
+      name: 'create_billing_request',
+      arguments: {
+        amount_cents: 2999,
+        currency: 'GBP',
+        description: 'Monthly subscription payment',
+        customer_email: `billing.${Date.now()}@example.com`,
+        customer_given_name: 'Billing',
+        customer_family_name: 'Test',
+        customer_company_name: 'Test Subscription Co'
+      }
+    }
+  },
+  
+  'list-billing-requests': {
+    description: 'List recent billing requests',
+    method: 'tools/call',
+    params: {
+      name: 'list_billing_requests',
+      arguments: { limit: 10 }
+    }
+  },
+  
   // Error tests
   'invalid-customer': {
     description: 'Test error handling with invalid customer ID',
